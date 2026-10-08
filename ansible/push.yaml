@@ -1,0 +1,119 @@
+---
+- name: Deploy shared expenses image with Docker Compose
+  hosts: web
+  become: true
+  vars:
+    install_dir: /opt/shared-expenses
+    image_name: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../image.tag') | trim }}"
+    image_platform: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../image.platform') | trim }}"
+    image_already_loaded: "{{ lookup('ansible.builtin.env', 'SHARED_EXPENSES_IMAGE_ALREADY_LOADED') | default('false', true) | bool }}"
+    phx_host: "{{ lookup('ansible.builtin.env', 'PHX_HOST') | default('localhost', true) }}"
+    phx_scheme: "{{ lookup('ansible.builtin.env', 'PHX_SCHEME') | default('http', true) }}"
+    app_port: "{{ lookup('ansible.builtin.env', 'APP_PORT') | default('4001', true) }}"
+    phx_port: "{{ lookup('ansible.builtin.env', 'PHX_PORT') | default(app_port if phx_scheme == 'http' else '443', true) }}"
+  tasks:
+    - name: Check deployment settings
+      ansible.builtin.assert:
+        that:
+          - phx_host is match('^[A-Za-z0-9.-]+$')
+          - phx_scheme in ['http', 'https']
+          - app_port | int > 0
+          - app_port | int < 65536
+          - phx_port | int > 0
+          - phx_port | int < 65536
+          - image_name is match('^shared-expenses:[A-Za-z0-9_.-]+$')
+          - (image_platform == 'linux/amd64' and ansible_facts['architecture'] == 'x86_64') or (image_platform == 'linux/arm64' and ansible_facts['architecture'] in ['aarch64', 'arm64'])
+        fail_msg: Set valid PHX_HOST, PHX_SCHEME, APP_PORT and build an image for this server's CPU before deploying.
+      no_log: true
+
+    - name: Create deployment directory
+      ansible.builtin.file:
+        path: "{{ install_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Keep database, WAL files, and covers on persistent local storage
+      ansible.builtin.file:
+        path: "{{ install_dir }}/data"
+        state: directory
+        owner: "10001"
+        group: "10001"
+        mode: "0750"
+        recurse: true
+
+    - name: Generate a production signing secret once
+      ansible.builtin.command:
+        argv: [openssl, rand, -hex, "48"]
+        creates: "{{ install_dir }}/secret_key_base"
+      register: generated_secret
+      no_log: true
+
+    - name: Save signing secret for future deployments
+      ansible.builtin.copy:
+        dest: "{{ install_dir }}/secret_key_base"
+        content: "{{ generated_secret.stdout }}\n"
+        mode: "0600"
+      when: generated_secret is changed
+      no_log: true
+
+    - name: Read existing signing secret
+      ansible.builtin.slurp:
+        src: "{{ install_dir }}/secret_key_base"
+      register: saved_secret
+      no_log: true
+
+    - name: Copy image archive
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../image.tar"
+        dest: "{{ install_dir }}/image.tar"
+        mode: "0644"
+      when: not (image_already_loaded | bool)
+
+    - name: Copy Compose configuration
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../docker-compose.yaml"
+        dest: "{{ install_dir }}/docker-compose.yaml"
+        mode: "0644"
+
+    - name: Write Compose variables and Phoenix secret
+      ansible.builtin.copy:
+        dest: "{{ install_dir }}/.env"
+        mode: "0600"
+        content: |
+          SHARED_EXPENSES_IMAGE={{ image_name }}
+          PHX_HOST={{ phx_host }}
+          PHX_SCHEME={{ phx_scheme }}
+          PHX_PORT={{ phx_port }}
+          SECRET_KEY_BASE={{ saved_secret.content | b64decode | trim }}
+          APP_PORT={{ app_port }}
+          DATA_DIR=./data
+      no_log: true
+
+    - name: Load image before replacing the running service
+      ansible.builtin.command:
+        argv:
+          - docker
+          - load
+          - --input
+          - "{{ install_dir }}/image.tar"
+      changed_when: true
+      when: not (image_already_loaded | bool)
+
+    - name: Confirm the image is loaded on this host
+      ansible.builtin.command:
+        argv: [docker, image, inspect, "{{ image_name }}"]
+      changed_when: false
+
+    - name: Start Compose stack and wait for readiness
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - up
+          - --detach
+          - --no-build
+          - --wait
+          - --wait-timeout
+          - "120"
+        chdir: "{{ install_dir }}"
+      changed_when: true

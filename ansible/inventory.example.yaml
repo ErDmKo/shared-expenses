@@ -1,0 +1,6 @@
+all:
+  children:
+    web:
+      hosts:
+        your-server.example.com:
+          ansible_user: deploy

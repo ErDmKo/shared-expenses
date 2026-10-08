@@ -1,0 +1,38 @@
+---
+- name: Expose shared expenses on erdmko.dev port 4004 with the existing TLS certificate
+  hosts: web
+  become: true
+  tasks:
+    - name: Check that the existing erdmko.dev certificate is available
+      ansible.builtin.stat:
+        path: /etc/letsencrypt/live/erdmko.dev/fullchain.pem
+      register: certificate
+
+    - name: Require an existing certificate
+      ansible.builtin.assert:
+        that: certificate.stat.exists
+
+    - name: Install the dedicated Nginx site
+      ansible.builtin.copy:
+        src: nginx-shared-expenses.conf
+        dest: /etc/nginx/sites-available/shared-expenses
+        mode: "0644"
+        backup: true
+      register: site_config
+
+    - name: Enable the dedicated Nginx site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/shared-expenses
+        dest: /etc/nginx/sites-enabled/shared-expenses
+        state: link
+      register: site_link
+
+    - name: Validate the full Nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Reload Nginx only when the site changed
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      when: site_config is changed or site_link is changed

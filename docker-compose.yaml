@@ -1,0 +1,31 @@
+name: shared-expenses
+
+services:
+  app:
+    image: ${SHARED_EXPENSES_IMAGE:-shared-expenses:local}
+    restart: unless-stopped
+    environment:
+      PHX_SERVER: "true"
+      PHX_HOST: ${PHX_HOST:?Set PHX_HOST in .env}
+      PHX_SCHEME: ${PHX_SCHEME:-https}
+      PHX_PORT: ${PHX_PORT:-443}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Set SECRET_KEY_BASE in .env}
+      DATABASE_PATH: /app/data/shared_expenses.db
+      COVER_DIR: /app/data/covers
+      PORT: "4000"
+    ports:
+      - "127.0.0.1:${APP_PORT:-4001}:4000"
+    volumes:
+      - ${DATA_DIR:-./data}:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "4", "http://127.0.0.1:4000/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    stop_grace_period: 30s
