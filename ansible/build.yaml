@@ -1,0 +1,80 @@
+---
+- name: Build shared expenses on the deployment host
+  hosts: web
+  become: true
+  vars:
+    install_dir: /opt/shared-expenses
+    source_revision: "{{ lookup('ansible.builtin.env', 'SOURCE_REV') | trim }}"
+    image_tag: "{{ lookup('ansible.builtin.env', 'IMAGE_TAG') | default(source_revision[:12], true) | trim }}"
+    image_name: "shared-expenses:{{ image_tag }}"
+    image_platform: "{{ lookup('ansible.builtin.env', 'PLATFORM') | default('linux/amd64', true) }}"
+  tasks:
+    - name: Require an immutable published commit and the host's native architecture
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - source_revision is match('^[0-9a-f]{40}$')
+          - image_tag is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$')
+          - (image_platform == 'linux/amd64' and ansible_facts['architecture'] == 'x86_64') or (image_platform == 'linux/arm64' and ansible_facts['architecture'] in ['aarch64', 'arm64'])
+        fail_msg: Set SOURCE_REV to a full commit SHA published to ErDmKo/shared-expenses, use a valid IMAGE_TAG, and select PLATFORM for one deployment host's CPU.
+
+    - name: Create the application directory without touching persistent data
+      ansible.builtin.file:
+        path: "{{ install_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Build the image and record it for deployment
+      when: not ansible_check_mode
+      block:
+        - name: Create an isolated temporary build directory
+          ansible.builtin.tempfile:
+            state: directory
+            path: "{{ install_dir }}"
+            prefix: "build-{{ source_revision[:12] }}-"
+          register: build_directory
+
+        - name: Compile from the published source
+          block:
+            - name: Download and extract the exact GitHub commit
+              ansible.builtin.unarchive:
+                src: "https://codeload.github.com/ErDmKo/shared-expenses/tar.gz/{{ source_revision }}"
+                dest: "{{ build_directory.path }}"
+                remote_src: true
+                extra_opts: [--strip-components=1]
+
+            - name: Build and load the production image on the server
+              ansible.builtin.command:
+                argv:
+                  - docker
+                  - buildx
+                  - build
+                  - --platform
+                  - "{{ image_platform }}"
+                  - --load
+                  - --tag
+                  - "{{ image_name }}"
+                  - --file
+                  - Dockerfile
+                  - --progress
+                  - plain
+                  - .
+                chdir: "{{ build_directory.path }}"
+              changed_when: true
+
+            - name: Save the successfully built image's metadata locally
+              ansible.builtin.copy:
+                dest: "{{ playbook_dir }}/../{{ item.filename }}"
+                content: "{{ item.value }}\n"
+                mode: "0644"
+              loop:
+                - {filename: image.tag, value: "{{ image_name }}"}
+                - {filename: image.platform, value: "{{ image_platform }}"}
+              delegate_to: localhost
+              become: false
+
+          always:
+            - name: Remove only this run's temporary source directory
+              ansible.builtin.file:
+                path: "{{ build_directory.path }}"
+                state: absent

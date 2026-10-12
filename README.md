@@ -27,22 +27,64 @@ SQLite databases (`shared_expenses_dev.db` and `shared_expenses_test.db`) and lo
 
 ## Docker Compose deployment
 
-The workflow follows `month.erdmko.de`: build a Linux image locally, save it as `image.tar`, copy it to the server with Ansible, load it with Docker, and bring up Compose. The image runs a Phoenix release; database migrations run automatically on release startup.
+Production runs a Phoenix release in Docker Compose; database migrations run automatically on release startup. There are two build methods: compile directly on the VPS with Ansible (recommended), or build through a local/remote Docker context and transfer an image archive.
+
+### Remote compilation with Ansible
+
+Requirements: Ansible on your computer; Python, Docker with Buildx, Docker Compose and outbound HTTPS access on the VPS. No local Docker engine or Git installation on the VPS is needed. The source repository [ErDmKo/shared-expenses](https://github.com/ErDmKo/shared-expenses) must be public, and the commit to build must already be pushed to GitHub.
+
+Set the host and SSH user in the ignored `ansible/inventory.yaml`, using `ansible/inventory.example.yaml` as a template. Configure SSH access separately. Run from the project root:
+
+```sh
+mix precommit
+git push origin main
+export SOURCE_REV="$(git rev-parse HEAD)"
+
+# Build the exact published commit on the VPS without restarting the app.
+ansible-playbook -i ansible/inventory.yaml ansible/build.yaml
+
+# The image is already on the deployment host: no archive upload is needed.
+SHARED_EXPENSES_IMAGE_ALREADY_LOADED=true \
+PHX_HOST=expenses.example.com PHX_SCHEME=https PHX_PORT=443 APP_PORT=4001 \
+ansible-playbook -i ansible/inventory.yaml ansible/push.yaml
+
+curl --fail https://expenses.example.com/healthz
+```
+
+Replace the example hostname and ports with your deployment settings. Configure HTTPS separately before checking the public endpoint.
+
+**What happens during the build:**
+
+1. `ansible/build.yaml` validates the full 40-character `SOURCE_REV` and the VPS CPU architecture, then downloads that commit's source archive directly from GitHub into an isolated directory under `/opt/shared-expenses`. Branch names and local uncommitted changes are not used.
+2. Docker executes the multi-stage `Dockerfile` on the VPS. The build stage installs dependencies, compiles Elixir in production mode, builds/minifies the JS and Tailwind CSS, and creates a Phoenix release. The smaller runtime image contains the release, not the source tree or build tools. Production secrets are supplied at deployment time, not baked into the image.
+3. Buildx loads `shared-expenses:<first 12 characters of SOURCE_REV>` into the VPS's Docker engine. Set `IMAGE_TAG` to override the tag. `PLATFORM` defaults to `linux/amd64`; use `PLATFORM=linux/arm64` on an ARM VPS. This playbook requires a single, native-architecture target.
+4. Only after a successful build, Ansible writes the ignored local `image.tag` and `image.platform` files used by `ansible/push.yaml`. The temporary source directory is removed even if compilation fails; Docker's build cache remains for faster rebuilds. The running service and its data are untouched by the build.
+5. `ansible/push.yaml` verifies the image, updates Compose configuration, replaces the container, and waits up to 120 seconds for it to become healthy. `SHARED_EXPENSES_IMAGE_ALREADY_LOADED=true` skips copying/loading `image.tar` because compilation happened on the same host.
+
+If a build fails, fix the problem and rerun it; do not deploy stale metadata from a previous build. If the image built successfully but deployment was interrupted, rerun just `ansible/push.yaml` with the same environment settings. `/healthz` should return `ok` with HTTP 200 after deployment.
+
+### Docker-context build and image archive (alternative)
+
+Build a Linux image through Docker, save it as `image.tar`, copy it to the server with Ansible, load it, and bring up Compose.
 
 1. Set the SSH host in the ignored `ansible/inventory.yaml` (or copy `ansible/inventory.example.yaml`). Set `APP_PORT` to an unused host port if `4001` is taken.
 2. Build on an amd64 Docker engine and deploy:
 
 ```sh
 DOCKER_CONTEXT=shared-expenses-builder ./scripts/build-image.sh
-ansible-playbook -i ansible/inventory.yaml ansible/push.yaml --private-key ~/.ssh/id_rsa_legacy
+ansible-playbook -i ansible/inventory.yaml ansible/push.yaml
 ```
 
-Or use `./scripts/publish.sh --private-key ~/.ssh/your_key` to build and run the playbook together. `INVENTORY` overrides its default inventory path. By default the build targets `linux/amd64`, matching the month deployment; set `PLATFORM=linux/arm64` for an ARM server. Each build gets a timestamped image tag in the ignored `image.tag` file; `image.platform` records its architecture so Ansible refuses a mismatched host.
+Or use `./scripts/publish.sh` to build and run the playbook together. `INVENTORY` overrides its default inventory path. By default the build targets `linux/amd64`; set `PLATFORM=linux/arm64` for an ARM server. Each build gets a timestamped image tag in the ignored `image.tag` file; `image.platform` records its architecture so Ansible refuses a mismatched host.
 
-An ARM Docker engine must support amd64 builds to target an amd64 server. If it does not (for example, this Mac's Colima builder), use a native amd64 Docker context: `docker context create shared-expenses-builder --docker host=ssh://user@your-server.example.com`, then `DOCKER_CONTEXT=shared-expenses-builder ./scripts/build-image.sh`. The build runs on that Docker engine and saves the archive locally; `BUILDER` can override the Buildx builder name if it differs from the context name. The script checks platform support before building.
+An ARM Docker engine must support amd64 builds to target an amd64 server. If it does not, use a native amd64 Docker context: `docker context create shared-expenses-builder --docker host=ssh://user@your-server.example.com`, then `DOCKER_CONTEXT=shared-expenses-builder ./scripts/build-image.sh`. The build runs on that Docker engine and saves the archive locally; `BUILDER` can override the Buildx builder name if it differs from the context name. The script checks platform support before building.
 
-If the Docker context points to the **same** server that Ansible deploys to, avoid downloading and re-uploading the image archive: `DOCKER_CONTEXT=shared-expenses-builder SKIP_IMAGE_SAVE=true ./scripts/build-image.sh` followed by `SHARED_EXPENSES_IMAGE_ALREADY_LOADED=true ansible-playbook -i ansible/inventory.yaml ansible/push.yaml --private-key ~/.ssh/id_rsa_legacy`. The build script removes any stale `image.tar` in this mode; `scripts/publish.sh` sets the matching Ansible variable automatically.
+If the Docker context points to the **same** server that Ansible deploys to, avoid downloading and re-uploading the image archive: `DOCKER_CONTEXT=shared-expenses-builder SKIP_IMAGE_SAVE=true ./scripts/build-image.sh` followed by `SHARED_EXPENSES_IMAGE_ALREADY_LOADED=true ansible-playbook -i ansible/inventory.yaml ansible/push.yaml`. The build script removes any stale `image.tar` in this mode; `scripts/publish.sh` sets the matching Ansible variable automatically.
 
-The playbook generates a production signing secret on the server once, keeps it in `/opt/shared-expenses/secret_key_base` and reuses it on later deployments. It writes `/opt/shared-expenses/.env` and keeps the database, its WAL files, and uploaded covers in `/opt/shared-expenses/data` across image replacements. Compose publishes **only** `127.0.0.1:4001` by default. The separate `ansible/https.yaml` playbook configures Nginx to serve `https://erdmko.dev:4004` with the existing certificate and proxy to that loopback port, including LiveView WebSocket upgrades. Set `PHX_HOST=erdmko.dev PHX_SCHEME=https PHX_PORT=4004` when running `ansible/push.yaml` for this endpoint, then run `ansible/https.yaml`. The existing site on ports 80/443 is unchanged. For server-only access, the SSH tunnel `ssh -L 4001:127.0.0.1:4001 -i ~/.ssh/id_rsa_legacy root@erdmko.dev` remains available.
+Ansible and Docker SSH contexts use separate connection settings. Use `ansible/build.yaml` above to avoid configuring a Docker SSH context.
+
+### Persistent data and HTTPS
+
+The deployment playbook creates a production signing secret once and reuses it on later deployments. The database, WAL files, and uploaded covers remain in persistent storage across image replacements. Compose binds the application to loopback by default; use a reverse proxy for public HTTPS access and LiveView WebSocket upgrades. `ansible/https.yaml` and `ansible/nginx-shared-expenses.conf` provide an example setup; customize the hostname, ports, and certificate paths before using them.
 
 For local Compose use, copy `.env.example` to `.env`, replace the sample hostname and secret, and set `SHARED_EXPENSES_IMAGE` to the tag in `image.tag` before running `docker compose up --detach --wait`. The Compose `./data` mount is separate from the development database in the project root; copying an existing database requires a SQLite-safe backup and suitable ownership for container UID `10001`.
