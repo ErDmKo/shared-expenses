@@ -58,7 +58,43 @@ defmodule SharedExpensesWeb.EventLiveTest do
     assert has_element?(view, "#suggestions", "Sam")
     assert has_element?(view, "#total-spent", "€20")
     assert has_element?(view, "#event-hero-total-spent", "€20")
+    [expense] = Ledger.snapshot(event).expenses
+
+    assert has_element?(
+             view,
+             "#expense-added-at-#{expense.id}[datetime='#{DateTime.to_iso8601(expense.inserted_at)}']"
+           )
+
     refute has_element?(view, "#repayment-form")
+  end
+
+  test "expense history passes the recorded timestamp to the browser-local time hook", %{
+    conn: conn
+  } do
+    {:ok, event} = Ledger.create_event(%{"title" => "Weekend", "currency" => "EUR"})
+    {:ok, person} = Ledger.create_member(event, %{"name" => "Alex"})
+
+    {:ok, expense} =
+      Ledger.create_expense(event, %{
+        "description" => "Lunch",
+        "amount" => "12.50",
+        "payer_id" => to_string(person.id),
+        "participant_ids" => [to_string(person.id)]
+      })
+
+    recorded_at = ~U[2026-10-12 14:05:30Z]
+
+    expense
+    |> Ecto.Changeset.change(inserted_at: recorded_at)
+    |> SharedExpenses.Repo.update!()
+
+    {:ok, view, _} = live(conn, ~p"/e/#{event.slug}")
+
+    assert has_element?(
+             view,
+             "#expenses-#{expense.id} #expense-added-at-#{expense.id}[datetime='2026-10-12T14:05:30Z'][phx-hook='LocalTime'][phx-update='ignore']",
+             "—"
+           )
   end
 
   test "a missing share link cannot show an event", %{conn: conn} do
@@ -130,6 +166,7 @@ defmodule SharedExpensesWeb.EventLiveTest do
   test "an uploaded cover belongs to the event link", %{conn: conn} do
     {:ok, event} = Ledger.create_event(%{"title" => "Beach day", "currency" => "EUR"})
     {:ok, view, _} = live(conn, ~p"/e/#{event.slug}")
+    {:ok, people_view, _} = live(build_conn(), ~p"/e/#{event.slug}/people")
 
     png =
       Base.decode64!(
@@ -142,11 +179,21 @@ defmodule SharedExpensesWeb.EventLiveTest do
       ])
 
     assert render_upload(upload, "beach.png") =~ "Save"
+    assert has_element?(view, "#event-hero-preview img[data-phx-hook='Phoenix.LiveImgPreview']")
+    assert has_element?(view, "#cover-preview-notice")
+    assert Ledger.get_event!(event.slug).cover_filename == nil
+    refute has_element?(people_view, "#people-hero-preview")
     view |> form("#cover-form") |> render_submit()
+    refute has_element?(view, "#event-hero-preview")
+    refute has_element?(view, "#cover-preview-notice")
 
     updated = Ledger.get_event!(event.slug)
     assert updated.cover_filename
+    cover_url = ~p"/e/#{event.slug}/cover?#{[v: updated.cover_filename]}"
+    assert has_element?(view, "#event-hero[style*=\"#{cover_url}\"]")
+    assert has_element?(people_view, "#people-hero[style*=\"#{cover_url}\"]")
     assert response(get(conn, ~p"/e/#{event.slug}/cover"), 200) == png
+    assert response(get(conn, cover_url), 200) == png
     assert response(get(conn, ~p"/e/not-a-real-event/cover"), 404)
 
     {:ok, path} = SharedExpenses.Covers.path(updated.cover_filename)

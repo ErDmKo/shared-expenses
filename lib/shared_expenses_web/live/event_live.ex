@@ -106,6 +106,13 @@ defmodule SharedExpensesWeb.EventLive do
 
   def handle_event("validate_cover", _, socket), do: {:noreply, socket}
 
+  def handle_event("cancel_cover", %{"ref" => ref}, socket) do
+    {:noreply,
+     socket
+     |> cancel_upload(:cover, ref)
+     |> assign(:cover_error, nil)}
+  end
+
   def handle_event("save_cover", _, socket) do
     results =
       consume_uploaded_entries(socket, :cover, fn %{path: path}, _entry ->
@@ -198,35 +205,31 @@ defmodule SharedExpensesWeb.EventLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
-      <div class="space-y-7 py-8 sm:py-11">
-        <div class="flex items-center justify-between gap-3">
+      <.event_page>
+        <:actions>
           <div class="eyebrow">YOUR EVENT</div>
-          <.link navigate={~p"/"} class="text-sm font-semibold text-indigo-600 hover:text-indigo-800">+ New event</.link>
-        </div>
+          <.link
+            id="new-event-link"
+            navigate={~p"/"}
+            class="inline-flex min-h-11 items-center text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+          >+ New event</.link>
+        </:actions>
 
-        <section
+        <.event_hero
           id="event-hero"
-          class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-800 via-indigo-600 to-sky-500 p-5 text-white sm:p-8"
-          style={
-            if @event.cover_filename,
-              do:
-                "background-image: linear-gradient(90deg, rgba(18,26,59,.86), rgba(32,45,85,.42)), url('#{~p"/e/#{@event.slug}/cover"}'); background-position: center; background-size: cover;",
-              else: ""
-          }
+          event={@event}
+          preview_entry={Enum.find(@uploads.cover.entries, & &1.valid?)}
+          class="pb-1 sm:pb-3"
         >
-          <div class="relative z-10 max-w-xl">
-            <span class="rounded-full border border-white/35 bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-widest">Shared event</span>
-            <h1 class="mt-4 break-words text-2xl font-semibold tracking-tight sm:text-4xl">
-              {@event.title}
-            </h1>
-            <p class="mt-2 text-sm text-white/80">
+          <.event_heading id="event-heading" event={@event} label="Expenses">
+            <p class="mt-1.5 text-sm text-white/80">
               {@members_count} {if(@members_count == 1, do: "person", else: "people")} · {@expenses_count} {if(
                 @expenses_count == 1,
                 do: "expense",
                 else: "expenses"
               )} · {@event.currency}
             </p>
-            <div class="mt-4">
+            <div class="mt-3 sm:mt-2">
               <p class="text-xs font-semibold uppercase tracking-wider text-white/75">Total spent</p>
               <p
                 id="event-hero-total-spent"
@@ -235,13 +238,20 @@ defmodule SharedExpensesWeb.EventLive do
                 <.money amount_cents={@expense_total} currency={@event.currency} />
               </p>
             </div>
-          </div>
-          <details id="event-details" class="group relative z-10 mt-4 border-t border-white/25 pt-1">
-            <summary class="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-sm font-semibold text-white/90">
+          </.event_heading>
+          <details
+            id="event-details"
+            open={@uploads.cover.entries != []}
+            class="group mt-3 border-t border-white/25 pt-1"
+          >
+            <summary
+              id="event-details-toggle"
+              class="flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-lg text-sm font-semibold text-white/90 transition-colors duration-200 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 motion-reduce:transition-none"
+            >
               Share link & cover
               <.icon
                 name="hero-chevron-down"
-                class="size-4 transition-transform group-open:rotate-180"
+                class="size-4 transition-transform duration-200 ease-out group-open:rotate-180 motion-reduce:transition-none"
               />
             </summary>
             <div class="flex flex-col gap-4 pb-2 pt-2 sm:flex-row sm:items-end sm:justify-between">
@@ -268,17 +278,34 @@ defmodule SharedExpensesWeb.EventLive do
                 </label>
                 <button
                   :if={@uploads.cover.entries != []}
+                  id="save-cover"
                   class="min-h-11 rounded-lg bg-white px-4 text-sm font-semibold text-indigo-800"
                   type="submit"
+                  phx-disable-with="Saving…"
                 >Save</button>
+                <button
+                  :for={entry <- @uploads.cover.entries}
+                  id="cancel-cover-upload"
+                  type="button"
+                  phx-click="cancel_cover"
+                  phx-value-ref={entry.ref}
+                  class="min-h-11 rounded-lg border border-white/40 px-3 text-sm font-semibold text-white transition hover:bg-white/15"
+                >Cancel</button>
               </.form>
             </div>
+            <p
+              :if={Enum.any?(@uploads.cover.entries, & &1.valid?)}
+              id="cover-preview-notice"
+              class="pb-2 text-xs text-white/80"
+            >
+              Preview only. Save to use this cover on both pages.
+            </p>
             <p :if={@cover_error} class="pb-2 text-sm text-rose-100">{@cover_error}</p>
             <p :for={error <- upload_errors(@uploads.cover)} class="pb-2 text-sm text-rose-100">
               Cover upload: {inspect(error)}
             </p>
           </details>
-        </section>
+        </.event_hero>
 
         <nav
           id="event-nav"
@@ -472,6 +499,20 @@ defmodule SharedExpensesWeb.EventLive do
                     |> Enum.map(& &1.member.name)
                     |> Enum.join(", ")}
                   </p>
+                  <p class="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
+                    <.icon name="hero-clock" class="size-3.5 shrink-0" />
+                    <span>
+                      Added
+                      <time
+                        id={"expense-added-at-#{expense.id}"}
+                        datetime={DateTime.to_iso8601(expense.inserted_at)}
+                        phx-hook="LocalTime"
+                        phx-update="ignore"
+                      >
+                        —
+                      </time>
+                    </span>
+                  </p>
                 </div>
                 <div class="flex shrink-0 items-center gap-4">
                   <.money
@@ -529,7 +570,7 @@ defmodule SharedExpensesWeb.EventLive do
             </p>
           </div>
         </details>
-      </div>
+      </.event_page>
     </Layouts.app>
     """
   end

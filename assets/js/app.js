@@ -24,12 +24,15 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/shared_expenses"
 import topbar from "../vendor/topbar"
+import LocalTime from "./hooks/local_time.mjs"
+import {navigationTransitions} from "./navigation_transitions.mjs"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, LocalTime},
+  dom: {onDocumentPatch: navigationTransitions()},
 })
 
 // Show progress bar on live navigation and form submits

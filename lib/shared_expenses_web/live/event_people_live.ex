@@ -153,22 +153,24 @@ defmodule SharedExpensesWeb.EventPeopleLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
-      <div class="space-y-5 py-6 sm:space-y-7 sm:py-10">
-        <.link
-          id="back-to-expenses"
-          navigate={~p"/e/#{@event.slug}"}
-          class="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-800"
-        >
-          <.icon name="hero-arrow-left" class="size-4" /> Back to expenses
-        </.link>
+      <.event_page>
+        <:actions>
+          <.link
+            id="back-to-expenses"
+            navigate={~p"/e/#{@event.slug}"}
+            class="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+          >
+            <.icon name="hero-arrow-left" class="size-4" /> Back to expenses
+          </.link>
+        </:actions>
 
-        <header class="rounded-3xl bg-gradient-to-br from-indigo-800 via-indigo-600 to-sky-500 p-5 text-white sm:p-8">
-          <p class="text-xs font-semibold uppercase tracking-widest text-white/75">{@event.title}</p>
-          <h1 class="mt-2 text-2xl font-semibold tracking-tight sm:text-4xl">People & families</h1>
-          <p class="mt-2 text-sm text-white/80">
-            {@members_count} {if(@members_count == 1, do: "person", else: "people")} in this event
-          </p>
-        </header>
+        <.event_hero id="people-hero" event={@event}>
+          <.event_heading id="people-heading" event={@event} label="People & families">
+            <p class="mt-1.5 text-sm text-white/80">
+              {@members_count} {if(@members_count == 1, do: "person", else: "people")} in this event
+            </p>
+          </.event_heading>
+        </.event_hero>
 
         <nav
           id="event-nav"
@@ -360,7 +362,7 @@ defmodule SharedExpensesWeb.EventPeopleLive do
             <p :if={@assignment_error} class="mt-2 text-sm text-rose-600">{@assignment_error}</p>
           </section>
         </div>
-      </div>
+      </.event_page>
     </Layouts.app>
     """
   end

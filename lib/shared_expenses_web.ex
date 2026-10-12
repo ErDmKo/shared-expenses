@@ -81,6 +81,7 @@ defmodule SharedExpensesWeb do
       import Phoenix.HTML
       # Core UI components
       import SharedExpensesWeb.CoreComponents
+      import SharedExpensesWeb.EventComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS

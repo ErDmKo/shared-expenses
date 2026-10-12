@@ -143,6 +143,54 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
+/* Full-page navigation opts in with CSS; LiveView navigation uses the
+   onDocumentPatch bridge in app.js. Unsupported browsers ignore these rules. */
+@view-transition {
+  navigation: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #site-header-content { view-transition-name: site-header; }
+  #event-hero, #people-hero { view-transition-name: event-hero; }
+  #event-nav { view-transition-name: event-nav; }
+
+  ::view-transition-group(*) {
+    animation-duration: 180ms;
+    animation-timing-function: ease-in-out;
+  }
+
+  ::view-transition-old(*), ::view-transition-new(*) {
+    animation-duration: 180ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+}
+
+/* Keep native details/summary semantics. Older browsers fall back to the normal
+   toggle; supporting browsers smoothly reveal and collapse the cover controls. */
+@supports (interpolate-size: allow-keywords) and selector(details::details-content) {
+  @media (prefers-reduced-motion: no-preference) {
+    #event-details { interpolate-size: allow-keywords; }
+
+    #event-details::details-content {
+      height: 0;
+      opacity: 0;
+      overflow: hidden;
+      content-visibility: hidden;
+      transition: height 220ms ease-in-out, opacity 160ms ease-out, content-visibility 220ms;
+      transition-behavior: allow-discrete;
+    }
+
+    #event-details[open]::details-content {
+      height: auto;
+      opacity: 1;
+      content-visibility: visible;
+    }
+  }
+}
+
 /* This file is for your main application CSS */
 body { background: #f8fafc; color: #1e293b; font-family: var(--font-sans); }
 h1, h2, h3 { font-family: var(--font-display); }
