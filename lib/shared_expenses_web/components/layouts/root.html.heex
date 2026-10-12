@@ -6,6 +6,20 @@
     <meta name="csrf-token" content={get_csrf_token()} />
     <meta name="referrer" content="no-referrer" />
     <.live_title default="together." suffix=" · together." phx-no-format>{assigns[:page_title]}</.live_title>
+    <link
+      rel="preload"
+      href={~p"/fonts/dm-sans-latin.woff2"}
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="preload"
+      href={~p"/fonts/outfit-latin.woff2"}
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>

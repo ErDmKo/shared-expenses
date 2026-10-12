@@ -19,11 +19,22 @@ defmodule SharedExpenses.Money do
 
   def parse(_), do: {:error, "enter a positive amount with up to two decimal places"}
 
-  def format(cents, currency \\ "EUR") when is_integer(cents) do
+  def format(cents, currency \\ "EUR", opts \\ []) when is_integer(cents) do
     sign = if cents < 0, do: "−", else: ""
     cents = abs(cents)
+    whole = Integer.to_string(div(cents, 100))
 
-    "#{sign}#{div(cents, 100)}.#{cents |> rem(100) |> Integer.to_string() |> String.pad_leading(2, "0")} #{currency}"
+    fraction =
+      if rem(cents, 100) == 0 and Keyword.get(opts, :trim_zero_cents, false) do
+        ""
+      else
+        "." <> (cents |> rem(100) |> Integer.to_string() |> String.pad_leading(2, "0"))
+      end
+
+    case currency do
+      "EUR" -> "#{sign}€#{String.replace(whole, ~r/\B(?=(\d{3})+(?!\d))/, ",")}#{fraction}"
+      _ -> "#{sign}#{whole}#{fraction} #{currency}"
+    end
   end
 
   def split(cents, recipient_ids)

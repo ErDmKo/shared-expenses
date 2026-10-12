@@ -1,7 +1,7 @@
 defmodule SharedExpensesWeb.EventLive do
   use SharedExpensesWeb, :live_view
 
-  alias SharedExpenses.{Covers, Ledger, Money}
+  alias SharedExpenses.{Covers, Ledger}
   alias SharedExpenses.Ledger.Calculation
 
   @impl true
@@ -230,9 +230,9 @@ defmodule SharedExpensesWeb.EventLive do
               <p class="text-xs font-semibold uppercase tracking-wider text-white/75">Total spent</p>
               <p
                 id="event-hero-total-spent"
-                class="mt-1 break-words text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl"
+                class="mt-1 break-words font-display text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl"
               >
-                {Money.format(@expense_total, @event.currency)}
+                <.money amount_cents={@expense_total} currency={@event.currency} />
               </p>
             </div>
           </div>
@@ -398,7 +398,7 @@ defmodule SharedExpensesWeb.EventLive do
               id="total-spent"
               class="mt-2 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl"
             >
-              {Money.format(@expense_total, @event.currency)}
+              <.money amount_cents={@expense_total} currency={@event.currency} />
             </p>
           </div>
           <div class="surface p-4 sm:p-5">
@@ -426,12 +426,16 @@ defmodule SharedExpensesWeb.EventLive do
             >
               <span class="font-medium text-slate-800">{person.name}
               <span :if={elem(person.key, 0) == :household} class="ml-1 text-xs text-slate-400">family</span></span>
-              <span class={[
-                "font-semibold tabular-nums",
-                person.amount_cents > 0 && "text-emerald-700",
-                person.amount_cents < 0 && "text-rose-600",
-                person.amount_cents == 0 && "text-slate-400"
-              ]}>{Money.format(person.amount_cents, @event.currency)}</span>
+              <.money
+                amount_cents={person.amount_cents}
+                currency={@event.currency}
+                class={[
+                  "font-semibold",
+                  person.amount_cents > 0 && "text-emerald-700",
+                  person.amount_cents < 0 && "text-rose-600",
+                  person.amount_cents == 0 && "text-slate-400"
+                ]}
+              />
             </div>
           </div>
           <div class="mt-6 rounded-2xl bg-indigo-50 p-4">
@@ -442,7 +446,7 @@ defmodule SharedExpensesWeb.EventLive do
             <div id="suggestions" class="mt-2 space-y-2">
               <p :for={suggestion <- @suggestions} class="text-sm text-indigo-900">
                 <strong>{suggestion.from}</strong> pays <strong>{suggestion.to}</strong>
-                <strong>{Money.format(suggestion.amount_cents, @event.currency)}</strong>
+                <strong><.money amount_cents={suggestion.amount_cents} currency={@event.currency} /></strong>
               </p>
             </div>
           </div>
@@ -470,10 +474,12 @@ defmodule SharedExpensesWeb.EventLive do
                   </p>
                 </div>
                 <div class="flex shrink-0 items-center gap-4">
-                  <span class="font-semibold tabular-nums text-slate-900">{Money.format(
-                    expense.amount_cents,
-                    @event.currency
-                  )}</span>
+                  <.money
+                    id={"expense-amount-#{expense.id}"}
+                    amount_cents={expense.amount_cents}
+                    currency={@event.currency}
+                    class="font-semibold text-slate-900"
+                  />
                   <button
                     id={"delete-expense-#{expense.id}"}
                     type="button"
@@ -519,7 +525,7 @@ defmodule SharedExpensesWeb.EventLive do
           <div id="repayments" phx-update="stream" class="mt-3 divide-y divide-slate-100">
             <p :for={{id, payment} <- @streams.repayments} id={id} class="py-3 text-sm text-slate-700">
               {payment.from_member.name} → {payment.to_member.name} ·
-              <strong>{Money.format(payment.amount_cents, @event.currency)}</strong>
+              <strong><.money amount_cents={payment.amount_cents} currency={@event.currency} /></strong>
             </p>
           </div>
         </details>

@@ -36,8 +36,11 @@ defmodule SharedExpensesWeb.Layouts do
   def app(assigns) do
     ~H"""
     <header class="border-b border-slate-200/80 bg-white/80 px-5 backdrop-blur-sm sm:px-8">
-      <div class="mx-auto flex h-18 max-w-6xl items-center justify-between">
-        <a href="/" class="flex items-center gap-2.5 text-lg font-bold tracking-tight text-slate-900">
+      <div id="site-header-content" class="mx-auto flex h-18 max-w-6xl items-center justify-between">
+        <a
+          href="/"
+          class="flex items-center gap-2.5 font-display text-lg font-bold tracking-tight text-slate-900"
+        >
           <span class="flex size-9 items-center justify-center rounded-xl bg-indigo-600 text-white"><.icon
             name="hero-squares-2x2"
             class="size-5"
@@ -47,11 +50,15 @@ defmodule SharedExpensesWeb.Layouts do
         <span class="text-xs font-medium text-slate-400">Less math, more moments</span>
       </div>
     </header>
-    <main class="mx-auto min-h-[calc(100vh-9rem)] max-w-6xl px-5 sm:px-8">
-      {render_slot(@inner_block)}
+    <main class="min-h-[calc(100vh-9rem)] px-5 sm:px-8">
+      <div id="site-main-content" class="mx-auto max-w-6xl">
+        {render_slot(@inner_block)}
+      </div>
     </main>
-    <footer class="mx-auto max-w-6xl px-5 py-7 text-xs text-slate-400 sm:px-8">
-      together. · Shared spending, made easy
+    <footer class="px-5 py-7 text-xs text-slate-400 sm:px-8">
+      <div id="site-footer-content" class="mx-auto max-w-6xl">
+        together. · Shared spending, made easy
+      </div>
     </footer>
     <.flash_group flash={@flash} />
     """

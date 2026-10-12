@@ -16,7 +16,10 @@ defmodule SharedExpensesWeb.EventLiveTest do
 
     {:ok, view, _} = follow_redirect(redirect, conn)
     assert has_element?(view, "#event-hero h1", "Weekend getaway")
-    assert has_element?(view, "#event-hero #event-hero-total-spent", "0.00 EUR")
+    assert has_element?(view, "header #site-header-content")
+    assert has_element?(view, "main #site-main-content #event-hero")
+    assert has_element?(view, "footer #site-footer-content")
+    assert has_element?(view, "#event-hero #event-hero-total-spent", "€0")
     assert has_element?(view, "#cover-form")
     assert has_element?(view, "#expenses-section")
     assert has_element?(view, "#add-people-link")
@@ -53,8 +56,8 @@ defmodule SharedExpensesWeb.EventLiveTest do
 
     assert has_element?(view, "#expenses", "Dinner")
     assert has_element?(view, "#suggestions", "Sam")
-    assert has_element?(view, "#total-spent", "20.00 EUR")
-    assert has_element?(view, "#event-hero-total-spent", "20.00 EUR")
+    assert has_element?(view, "#total-spent", "€20")
+    assert has_element?(view, "#event-hero-total-spent", "€20")
     refute has_element?(view, "#repayment-form")
   end
 
@@ -119,7 +122,7 @@ defmodule SharedExpensesWeb.EventLiveTest do
 
     {:ok, view, _} = live(conn, ~p"/e/#{event.slug}")
     assert has_element?(view, "#all-settled")
-    assert has_element?(view, "#previous-payments", "10.00 EUR")
+    assert has_element?(view, "#previous-payments", "€10")
     refute has_element?(view, "#repayment-form")
     refute has_element?(view, "#repayments-section")
   end
@@ -179,8 +182,8 @@ defmodule SharedExpensesWeb.EventLiveTest do
 
     view |> element("#confirm-delete-expense-#{expense.id} button", "Cancel") |> render_click()
     refute has_element?(view, "#confirm-delete-expense-#{expense.id}")
-    assert has_element?(view, "#total-spent", "10.00 EUR")
-    assert has_element?(view, "#event-hero-total-spent", "10.00 EUR")
+    assert has_element?(view, "#total-spent", "€10")
+    assert has_element?(view, "#event-hero-total-spent", "€10")
 
     view |> element("#delete-expense-#{expense.id}") |> render_click()
 
@@ -189,14 +192,14 @@ defmodule SharedExpensesWeb.EventLiveTest do
     |> render_click()
 
     refute has_element?(view, "#delete-expense-#{expense.id}")
-    assert has_element?(view, "#total-spent", "0.00 EUR")
-    assert has_element?(view, "#event-hero-total-spent", "0.00 EUR")
+    assert has_element?(view, "#total-spent", "€0")
+    assert has_element?(view, "#event-hero-total-spent", "€0")
     assert has_element?(view, "#all-settled")
     assert Ledger.snapshot(event).expenses == []
 
     refute has_element?(second_view, "#delete-expense-#{expense.id}")
-    assert has_element?(second_view, "#total-spent", "0.00 EUR")
-    assert has_element?(second_view, "#event-hero-total-spent", "0.00 EUR")
+    assert has_element?(second_view, "#total-spent", "€0")
+    assert has_element?(second_view, "#event-hero-total-spent", "€0")
   end
 
   test "hero sums expense amounts in the event currency and updates other open views", %{
@@ -207,7 +210,7 @@ defmodule SharedExpensesWeb.EventLiveTest do
     {:ok, bob} = Ledger.create_member(event, %{"name" => "Bob"})
     {:ok, view, _} = live(conn, ~p"/e/#{event.slug}")
     {:ok, second_view, _} = live(build_conn(), ~p"/e/#{event.slug}")
-    assert has_element?(view, "#event-hero-total-spent", "0.00 USD")
+    assert has_element?(view, "#event-hero-total-spent", "0 USD")
 
     for {description, amount} <- [{"Lunch", "12.34"}, {"Coffee", "5.67"}] do
       view
@@ -358,9 +361,9 @@ defmodule SharedExpensesWeb.EventLiveTest do
     )
     |> render_submit()
 
-    assert has_element?(view, "#balance-household-#{family_a.id}", "60.00 EUR")
-    assert has_element?(view, "#balance-household-#{family_b.id}", "−60.00 EUR")
-    assert has_element?(view, "#suggestions", "Family B pays Family A 60.00 EUR")
+    assert has_element?(view, "#balance-household-#{family_a.id}", "€60")
+    assert has_element?(view, "#balance-household-#{family_b.id}", "−€60")
+    assert has_element?(view, "#suggestions", "Family B pays Family A €60")
     refute has_element?(view, "#balance-member-#{payer.id}")
 
     [expense] = Ledger.snapshot(event).expenses
@@ -393,15 +396,15 @@ defmodule SharedExpensesWeb.EventLiveTest do
     [expense] = Ledger.snapshot(event).expenses
     assert Enum.all?(expense.shares, &(&1.amount_cents == 1000))
     {:ok, view, _} = live(conn, ~p"/e/#{event.slug}")
-    assert has_element?(view, "#balance-member-#{cara.id}", "20.00 EUR")
+    assert has_element?(view, "#balance-member-#{cara.id}", "€20")
 
     {:ok, family} = Ledger.create_household(event, %{"name" => "Family A"})
     assert {:ok, _} = Ledger.update_member_household(event, alice.id, family.id)
     assert {:ok, _} = Ledger.update_member_household(event, bob.id, family.id)
 
-    assert has_element?(view, "#balance-household-#{family.id}", "−15.00 EUR")
-    assert has_element?(view, "#balance-member-#{cara.id}", "15.00 EUR")
-    assert has_element?(view, "#suggestions", "Family A pays Cara 15.00 EUR")
+    assert has_element?(view, "#balance-household-#{family.id}", "−€15")
+    assert has_element?(view, "#balance-member-#{cara.id}", "€15")
+    assert has_element?(view, "#suggestions", "Family A pays Cara €15")
     refute has_element?(view, "#balance-member-#{alice.id}")
     refute has_element?(view, "#balance-member-#{bob.id}")
 
@@ -410,10 +413,10 @@ defmodule SharedExpensesWeb.EventLiveTest do
     people_view |> element("#confirm-delete-household-#{family.id}-confirm") |> render_click()
 
     refute has_element?(view, "#balance-household-#{family.id}")
-    assert has_element?(view, "#balance-member-#{alice.id}", "−10.00 EUR")
-    assert has_element?(view, "#balance-member-#{bob.id}", "−10.00 EUR")
-    assert has_element?(view, "#balance-member-#{cara.id}", "20.00 EUR")
-    assert has_element?(view, "#total-spent", "30.00 EUR")
+    assert has_element?(view, "#balance-member-#{alice.id}", "−€10")
+    assert has_element?(view, "#balance-member-#{bob.id}", "−€10")
+    assert has_element?(view, "#balance-member-#{cara.id}", "€20")
+    assert has_element?(view, "#total-spent", "€30")
   end
 
   defp expense_submission_key(view) do

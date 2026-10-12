@@ -145,7 +145,7 @@ defmodule SharedExpenses.LedgerTest do
     assert {:error, _} = Money.parse("0")
     assert {:error, _} = Money.parse("0.001")
     assert {:error, _} = Money.parse(12.3)
-    assert Money.format(-125, "EUR") == "−1.25 EUR"
+    assert Money.format(-125, "EUR") == "−€1.25"
   end
 
   test "replaying the same form does not double-charge an expense or payment" do

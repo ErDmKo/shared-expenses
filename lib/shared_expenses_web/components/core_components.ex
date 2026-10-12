@@ -29,6 +29,28 @@ defmodule SharedExpensesWeb.CoreComponents do
   use Phoenix.Component
 
   alias Phoenix.LiveView.JS
+  alias SharedExpenses.Money
+
+  @doc """
+  Renders money with aligned digits, omitting cents only when they are zero.
+
+  ## Examples
+
+      <.money amount_cents={10000} />
+      <.money amount_cents={10005} currency="EUR" class="font-semibold" />
+  """
+  attr :amount_cents, :integer, required: true
+  attr :currency, :string, default: "EUR"
+  attr :class, :any, default: nil
+  attr :rest, :global
+
+  def money(assigns) do
+    ~H"""
+    <span class={["tabular-nums", @class]} {@rest}>
+      {Money.format(@amount_cents, @currency, trim_zero_cents: true)}
+    </span>
+    """
+  end
 
   @doc """
   Renders flash notices.
