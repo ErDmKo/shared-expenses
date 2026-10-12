@@ -226,6 +226,15 @@ defmodule SharedExpensesWeb.EventLive do
                 else: "expenses"
               )} · {@event.currency}
             </p>
+            <div class="mt-4">
+              <p class="text-xs font-semibold uppercase tracking-wider text-white/75">Total spent</p>
+              <p
+                id="event-hero-total-spent"
+                class="mt-1 break-words text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl"
+              >
+                {Money.format(@expense_total, @event.currency)}
+              </p>
+            </div>
           </div>
           <details id="event-details" class="group relative z-10 mt-4 border-t border-white/25 pt-1">
             <summary class="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-sm font-semibold text-white/90">

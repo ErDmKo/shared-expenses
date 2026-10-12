@@ -16,6 +16,7 @@ defmodule SharedExpensesWeb.EventLiveTest do
 
     {:ok, view, _} = follow_redirect(redirect, conn)
     assert has_element?(view, "#event-hero h1", "Weekend getaway")
+    assert has_element?(view, "#event-hero #event-hero-total-spent", "0.00 EUR")
     assert has_element?(view, "#cover-form")
     assert has_element?(view, "#expenses-section")
     assert has_element?(view, "#add-people-link")
@@ -53,6 +54,7 @@ defmodule SharedExpensesWeb.EventLiveTest do
     assert has_element?(view, "#expenses", "Dinner")
     assert has_element?(view, "#suggestions", "Sam")
     assert has_element?(view, "#total-spent", "20.00 EUR")
+    assert has_element?(view, "#event-hero-total-spent", "20.00 EUR")
     refute has_element?(view, "#repayment-form")
   end
 
@@ -178,6 +180,7 @@ defmodule SharedExpensesWeb.EventLiveTest do
     view |> element("#confirm-delete-expense-#{expense.id} button", "Cancel") |> render_click()
     refute has_element?(view, "#confirm-delete-expense-#{expense.id}")
     assert has_element?(view, "#total-spent", "10.00 EUR")
+    assert has_element?(view, "#event-hero-total-spent", "10.00 EUR")
 
     view |> element("#delete-expense-#{expense.id}") |> render_click()
 
@@ -187,11 +190,47 @@ defmodule SharedExpensesWeb.EventLiveTest do
 
     refute has_element?(view, "#delete-expense-#{expense.id}")
     assert has_element?(view, "#total-spent", "0.00 EUR")
+    assert has_element?(view, "#event-hero-total-spent", "0.00 EUR")
     assert has_element?(view, "#all-settled")
     assert Ledger.snapshot(event).expenses == []
 
     refute has_element?(second_view, "#delete-expense-#{expense.id}")
     assert has_element?(second_view, "#total-spent", "0.00 EUR")
+    assert has_element?(second_view, "#event-hero-total-spent", "0.00 EUR")
+  end
+
+  test "hero sums expense amounts in the event currency and updates other open views", %{
+    conn: conn
+  } do
+    {:ok, event} = Ledger.create_event(%{"title" => "Weekend", "currency" => "USD"})
+    {:ok, alice} = Ledger.create_member(event, %{"name" => "Alice"})
+    {:ok, bob} = Ledger.create_member(event, %{"name" => "Bob"})
+    {:ok, view, _} = live(conn, ~p"/e/#{event.slug}")
+    {:ok, second_view, _} = live(build_conn(), ~p"/e/#{event.slug}")
+    assert has_element?(view, "#event-hero-total-spent", "0.00 USD")
+
+    for {description, amount} <- [{"Lunch", "12.34"}, {"Coffee", "5.67"}] do
+      view
+      |> form("#expense-form",
+        expense: %{description: description, amount: amount, payer_id: to_string(alice.id)}
+      )
+      |> render_submit()
+    end
+
+    assert has_element?(view, "#event-hero-total-spent", "18.01 USD")
+    assert has_element?(second_view, "#event-hero-total-spent", "18.01 USD")
+
+    assert {:ok, _} =
+             Ledger.create_repayment(event, %{
+               "from_member_id" => to_string(bob.id),
+               "to_member_id" => to_string(alice.id),
+               "amount" => "1.00"
+             })
+
+    assert has_element?(view, "#event-hero-total-spent", "18.01 USD")
+    assert has_element?(second_view, "#event-hero-total-spent", "18.01 USD")
+    {:ok, reopened_view, _} = live(build_conn(), ~p"/e/#{event.slug}")
+    assert has_element?(reopened_view, "#event-hero-total-spent", "18.01 USD")
   end
 
   test "a fresh expense splits between everyone and resets to all after saving", %{conn: conn} do
